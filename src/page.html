@@ -103,6 +103,13 @@ tr.nodata .pos{color:var(--faint)}
 td.flash{animation:flash 2.4s ease-out}
 @keyframes flash{0%{background:var(--flash)}100%{background:inherit}}
 tr.me td.flash{animation:none}
+tr.grp th{height:auto;padding:14px 10px 6px;text-align:left;background:var(--ground);border-bottom:1px solid var(--line-strong);text-transform:none;letter-spacing:0;position:static}
+tr.grp .gt{font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:.04em;color:var(--ink);margin-right:12px}
+tr.grp .gh{font-family:var(--body);font-weight:500;font-size:12px;color:var(--muted)}
+tr.grp .gh a{font-family:var(--display);font-weight:600;font-size:14px}
+tr.grp .st{font-size:11px;color:var(--faint)}
+td.rd .rp + .rp{margin-left:4px}
+.c-pilot .adv{font-family:var(--display);font-weight:700;font-size:10.5px;letter-spacing:.08em;color:var(--accent-ink);background:var(--accent);border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:1px}
 tr.pl{cursor:pointer}
 tr.pl:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 tr.pl:hover td{background:color-mix(in srgb,var(--accent-soft) 45%,var(--surface))}
@@ -158,6 +165,11 @@ footer b{color:var(--ink);font-weight:600}
   .c-pilot .caret{width:9px;font-size:8px}
   .c-pilot .name{font-size:12px}
   .c-pilot .meta{display:none}
+  .c-pilot .adv{font-size:9px;padding:0 4px;margin-left:4px}
+  tr.grp th{padding:10px 8px 4px}
+  tr.grp .gt{font-size:16px;margin-right:8px}
+  tr.grp .gh{font-size:10.5px}
+  tr.grp .gh a{font-size:12px}
   th.c-best,td.c-best{padding-left:8px}
   td.c-best{font-size:14px}
   td.c-best .from{display:inline;font-size:9px;margin:0 0 0 3px}
@@ -198,6 +210,7 @@ footer b{color:var(--ink);font-weight:600}
       <a href="#all" data-scope="all" aria-current="page">総合</a>
       <a href="#practice" data-scope="practice">Practice</a>
       <a href="#qualifier" data-scope="qualifier">Qualifier</a>
+      <a href="#main" data-scope="main">Main</a>
     </nav>
     <label class="ctl" for="metric"><span class="lt">順位の基準</span>
       <select id="metric">
@@ -241,9 +254,10 @@ footer b{color:var(--ink);font-weight:600}
     get(k){ try{ return localStorage.getItem(k) }catch(e){ return null } },
     set(k,v){ try{ localStorage.setItem(k,v) }catch(e){} }
   };
-  const SCOPES = ["all", "practice", "qualifier"];
+  const ADVANCE = 2; // pilots per main heat who go to the final
+  const SCOPES = ["all", "practice", "qualifier", "main"];
   function scopeFromHash(){ const h = location.hash.slice(1); return SCOPES.includes(h) ? h : null; }
-  const DEFAULT_METRIC = { all:"lapsTime", practice:"lapsTime", qualifier:"lapsTime" };
+  const DEFAULT_METRIC = { all:"lapsTime", practice:"lapsTime", qualifier:"lapsTime", main:"lapsTime" };
   const ui = {
     scope: scopeFromHash() || store.get("fdf.scope") || "all",
     metric: null,
@@ -301,18 +315,33 @@ footer b{color:var(--ink);font-weight:600}
     }
     const d = v - lead; return d <= 0 ? "—" : "+" + d.toFixed(3);
   }
-  const short = r => (r.kind === "practice" ? "P" : r.kind === "qualifier" ? "Q" : "R") + r.n;
+  const short = r => r.kind === "main" ? r.label : (r.kind === "practice" ? "P" : r.kind === "qualifier" ? "Q" : "R") + r.n;
+  // each main heat (A1, A2, ...) behaves like a round in the ranking code
+  const heatRounds = m => m.heats.map(h => ({id: h.raceId || h.name, label: h.name, kind: "main", n: h.n, url: h.url, status: h.status, pilots: h.pilots, klass: h.klass, classes: {[h.klass]: h.rows}}));
+  const allRounds = s => s.rounds.concat(...(s.mains || []).map(heatRounds));
 
   /* ---------- compute ---------- */
   function classesOf(s){
     const set = new Set();
-    s.rounds.forEach(r => Object.keys(r.classes || {}).forEach(c => set.add(c)));
+    allRounds(s).forEach(r => Object.keys(r.classes || {}).forEach(c => set.add(c)));
     return [...set];
   }
   function compute(){
     const metric = ui.metric || DEFAULT_METRIC[ui.scope];
+    if(ui.scope === "main"){
+      // each heat is ranked on its own: the top ADVANCE of every heat go to the final
+      const groups = (state.mains || []).flatMap(m => heatRounds(m).map(r =>
+        ({title: m.name + " Main", advance: ADVANCE, ...rank([r], metric, r.klass === ui.klass ? r.pilots : [])})
+      )).filter(g => g.list.length);
+      return {metric, groups};
+    }
     const rounds = state.rounds.filter(r => ui.scope === "all" ? (r.kind === "practice" || r.kind === "qualifier") : r.kind === ui.scope);
+    return {metric, groups: [{title: null, ...rank(rounds, metric, [])}]};
+  }
+  // seed: pilots listed before they have results (main heat sheets), kept in that order
+  function rank(rounds, metric, seed){
     const pilots = new Map();
+    seed.forEach(n => { if(!pilots.has(n)) pilots.set(n, {name: n, cells: []}); });
     const roundPos = rounds.map(r => {
       const rows = (r.classes && r.classes[ui.klass]) || [];
       const list = rows.map(row => ({p: row.driver, v: val(row, metric)})).filter(x => x.v != null);
@@ -333,10 +362,11 @@ footer b{color:var(--ink);font-weight:600}
       pl.best = best; pl.bestIdx = bi;
       pl.count = pl.cells.filter(c => c.v != null).length;
     }
-    const list = [...pilots.values()].sort((a,b) => cmp(a.best,b.best,metric) || a.name.localeCompare(b.name));
-    let rank = 0;
-    list.forEach(p => { p.rank = p.best != null ? ++rank : null; });
-    return {metric, rounds, list, lead: list[0] ? list[0].best : null};
+    const seeded = n => seed.includes(n) ? seed.indexOf(n) : Infinity;
+    const list = [...pilots.values()].sort((a,b) => cmp(a.best,b.best,metric) || seeded(a.name) - seeded(b.name) || a.name.localeCompare(b.name));
+    let pos = 0;
+    list.forEach(p => { p.rank = p.best != null ? ++pos : null; });
+    return {rounds, list, lead: list[0] ? list[0].best : null};
   }
 
   /* ---------- deltas between updates ---------- */
@@ -345,7 +375,7 @@ footer b{color:var(--ink);font-weight:600}
     const key = ui.scope + "|" + (ui.metric || DEFAULT_METRIC[ui.scope]) + "|" + ui.klass;
     const res = compute();
     const now = {};
-    res.list.forEach(p => { if(p.rank) now[p.name] = p.rank; });
+    res.groups.forEach(g => g.list.forEach(p => { if(p.rank) now[p.name] = p.rank; }));
     const prev = prevRanks[key];
     if(prev){
       for(const [n,r] of Object.entries(now)){
@@ -360,54 +390,72 @@ footer b{color:var(--ink);font-weight:600}
   function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
   function render(){
     if(!state) return;
-    const res = compute();
-    const {metric, rounds, list, lead} = res;
+    const {metric, groups} = compute();
     $("#metric").value = metric;
     document.querySelectorAll("#scopeSeg a").forEach(a => {
       if(a.dataset.scope === ui.scope) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
+    const isMain = ui.scope === "main";
+    const cols = Math.max(0, ...groups.map(g => g.rounds.length));
 
     let h = '<tr><th class="c-rank">Pos</th><th class="c-pilot">Pilot</th><th class="c-best">Best</th><th>Gap</th>';
-    rounds.forEach((r,i) => {
-      const has = Object.values(r.classes || {}).some(rows => rows.length);
-      const div = i > 0 && rounds[i-1].kind !== r.kind ? " divider" : "";
-      h += `<th class="rd${has ? "" : " empty"}${div}"><a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${short(r)}</a><span class="sub">${has ? r.kind : "未実施"}</span></th>`;
-    });
+    if(isMain){
+      h += '<th class="rd">Heat<span class="sub">main</span></th>';
+    } else {
+      groups[0].rounds.forEach((r,i,rounds) => {
+        const has = Object.values(r.classes || {}).some(rows => rows.length);
+        const div = i > 0 && rounds[i-1].kind !== r.kind ? " divider" : "";
+        h += `<th class="rd${has ? "" : " empty"}${div}"><a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${short(r)}</a><span class="sub">${has ? r.kind : "未実施"}</span></th>`;
+      });
+    }
     h += "</tr>";
     $("#thead").innerHTML = h;
 
-    if(!list.length){
-      $("#tbody").innerHTML = `<tr><td colspan="${4 + rounds.length}" class="empty-state" style="text-align:center">この範囲にはまだ結果がありません</td></tr>`;
+    if(!groups.some(g => g.list.length)){
+      const msg = isMain ? "Main の組み合わせはまだ発表されていません" : "この範囲にはまだ結果がありません";
+      $("#tbody").innerHTML = `<tr><td colspan="${4 + cols}" class="empty-state" style="text-align:center">${msg}</td></tr>`;
       return;
     }
     let b = "";
-    list.forEach(p => {
-      const cls = [p.rank && p.rank <= 3 ? "podium" : "", p.name === ui.me ? "me" : "", p.best == null ? "nodata" : ""].join(" ");
-      const d = deltas[p.name];
-      const dh = d === "new" ? '<span class="delta up">NEW</span>' : d > 0 ? `<span class="delta up">▲${d}</span>` : d < 0 ? `<span class="delta down">▼${-d}</span>` : "";
-      const from = p.bestIdx >= 0 ? short(p.cells[p.bestIdx].r) : "";
-      const isOpen = open.has(p.name);
-      b += `<tr class="pl ${cls}" data-pilot="${esc(p.name)}" tabindex="0" aria-expanded="${isOpen}"><td class="c-rank"><span class="pos">${p.rank ?? "–"}</span>${dh}</td>`;
-      b += `<td class="c-pilot"><span class="caret">${isOpen ? "▾" : "▸"}</span><span class="name">${esc(p.name)}</span><span class="meta">${p.count}R</span></td>`;
-      b += `<td class="c-best">${fmt(p.best, metric)}${from ? `<span class="from">${from}</span>` : ""}</td>`;
-      b += `<td class="c-gap">${p.rank === 1 ? "" : gap(p.best, lead, metric)}</td>`;
-      p.cells.forEach((c,i) => {
-        const div = i > 0 && rounds[i-1].kind !== c.r.kind ? " divider" : "";
-        const k = p.name + "|" + c.r.id;
-        const fl = changedCells.has(k) ? " flash" : "";
-        if(c.v == null){
-          b += `<td class="rd none${div}${fl}">${c.flown ? "DNF" : "—"}</td>`;
-        } else {
-          b += `<td class="rd${i === p.bestIdx ? " best" : ""}${div}${fl}">${fmt(c.v, metric)}<span class="rp">#${c.pos}</span></td>`;
-        }
-      });
-      b += "</tr>";
-      if(isOpen) b += `<tr class="detail"><td colspan="${4 + rounds.length}"><div class="inner">${lapDetail(p)}</div></td></tr>`;
+    groups.forEach(g => {
+      if(g.title){
+        const heats = g.rounds.map(r => `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.label)}</a> <span class="st">${esc(r.status || "")}</span>`).join(" · ");
+        b += `<tr class="grp"><th colspan="${4 + cols}"><span class="gt">${esc(g.title)}</span><span class="gh">${heats}</span></th></tr>`;
+      }
+      g.list.forEach(p => { b += pilotRow(p, g.rounds, g.lead, metric, cols, g.advance); });
     });
     // rebuilding the tbody drops keyboard focus; put it back on the same pilot's row
     const focused = document.activeElement?.matches?.("#tbody tr.pl") ? document.activeElement.dataset.pilot : null;
     $("#tbody").innerHTML = b;
     if(focused != null) [...document.querySelectorAll("#tbody tr.pl")].find(r => r.dataset.pilot === focused)?.focus();
+  }
+
+  function pilotRow(p, rounds, lead, metric, cols, advance){
+    const adv = advance && p.rank && p.rank <= advance;
+    const cls = [p.rank && p.rank <= (advance || 3) ? "podium" : "", p.name === ui.me ? "me" : "", p.best == null ? "nodata" : ""].join(" ");
+    const d = deltas[p.name];
+    const dh = d === "new" ? '<span class="delta up">NEW</span>' : d > 0 ? `<span class="delta up">▲${d}</span>` : d < 0 ? `<span class="delta down">▼${-d}</span>` : "";
+    const from = p.bestIdx >= 0 ? short(p.cells[p.bestIdx].r) : "";
+    const isOpen = open.has(p.name);
+    let b = `<tr class="pl ${cls}" data-pilot="${esc(p.name)}" tabindex="0" aria-expanded="${isOpen}"><td class="c-rank"><span class="pos">${p.rank ?? "–"}</span>${dh}</td>`;
+    b += `<td class="c-pilot"><span class="caret">${isOpen ? "▾" : "▸"}</span><span class="name">${esc(p.name)}</span>${adv ? '<span class="adv">FINAL</span>' : `<span class="meta">${p.count}R</span>`}</td>`;
+    b += `<td class="c-best">${fmt(p.best, metric)}${from ? `<span class="from">${from}</span>` : ""}</td>`;
+    b += `<td class="c-gap">${p.rank === 1 ? "" : gap(p.best, lead, metric)}</td>`;
+    p.cells.forEach((c,i) => {
+      const div = i > 0 && rounds[i-1].kind !== c.r.kind ? " divider" : "";
+      const fl = changedCells.has(p.name + "|" + c.r.id) ? " flash" : "";
+      const tag = c.r.kind === "main" ? `<span class="rp">${esc(c.r.label)}</span>` : "";
+      if(c.v == null){
+        const seated = c.r.kind === "main" && (c.r.pilots || []).includes(p.name);
+        b += `<td class="rd none${div}${fl}">${c.flown ? "DNF" : seated ? "未出走" : "—"}${seated || c.flown ? tag : ""}</td>`;
+      } else {
+        b += `<td class="rd${i === p.bestIdx ? " best" : ""}${div}${fl}">${fmt(c.v, metric)}<span class="rp">#${c.pos}</span>${tag}</td>`;
+      }
+    });
+    for(let i = p.cells.length; i < cols; i++) b += '<td class="rd none"></td>';
+    b += "</tr>";
+    if(isOpen) b += `<tr class="detail"><td colspan="${4 + cols}"><div class="inner">${lapDetail(p)}</div></td></tr>`;
+    return b;
   }
 
   /* ---------- lap detail ---------- */
@@ -476,7 +524,10 @@ footer b{color:var(--ink);font-weight:600}
     ksel.innerHTML = ks.map(k => `<option${k === ui.klass ? " selected" : ""}>${esc(k)}</option>`).join("");
     $("#klassWrap").hidden = ks.length < 2;
     const names = new Set();
-    state.rounds.forEach(r => Object.values(r.classes || {}).forEach(rows => rows.forEach(x => names.add(x.driver))));
+    allRounds(state).forEach(r => {
+      Object.values(r.classes || {}).forEach(rows => rows.forEach(x => names.add(x.driver)));
+      (r.pilots || []).forEach(n => names.add(n));
+    });
     const msel = $("#me");
     msel.innerHTML = '<option value="">なし</option>' + [...names].sort().map(n => `<option${n === ui.me ? " selected" : ""}>${esc(n)}</option>`).join("");
   }
@@ -501,14 +552,14 @@ footer b{color:var(--ink);font-weight:600}
 
   function diffCells(oldS, newS){
     if(!oldS) return;
-    const idx = s => { const m = {}; s.rounds.forEach(r => Object.values(r.classes||{}).forEach(rows => rows.forEach(x => m[x.driver + "|" + r.id] = [x.lapsTime, x.top3, x.top2, x.fastest].join("|")))); return m; };
+    const idx = s => { const m = {}; allRounds(s).forEach(r => Object.values(r.classes||{}).forEach(rows => rows.forEach(x => m[x.driver + "|" + r.id] = [x.lapsTime, x.top3, x.top2, x.fastest].join("|")))); return m; };
     const a = idx(oldS), b = idx(newS);
     for(const k in b) if(a[k] !== b[k]) changedCells.add(k);
   }
 
   function onData(s){
     if(!s || !Array.isArray(s.rounds)) return;
-    const sig = JSON.stringify(s.rounds);
+    const sig = JSON.stringify([s.rounds, s.mains]);
     const old = state;
     state = s;
     renderMeta();
