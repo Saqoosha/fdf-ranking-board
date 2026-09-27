@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <title>FDF Cup Ranking Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -103,6 +103,23 @@ tr.nodata .pos{color:var(--faint)}
 td.flash{animation:flash 2.4s ease-out}
 @keyframes flash{0%{background:var(--flash)}100%{background:inherit}}
 tr.me td.flash{animation:none}
+tr.pl{cursor:pointer}
+tr.pl:hover td{background:color-mix(in srgb,var(--accent-soft) 45%,var(--surface))}
+tr.pl.me:hover td{background:var(--me)}
+.c-pilot .caret{display:inline-block;width:12px;color:var(--faint);font-size:10px}
+tr.detail td{height:auto;padding:0;text-align:left;white-space:normal;background:var(--ground)}
+tr.detail .inner{position:sticky;left:0;max-width:min(100vw - 34px,1178px);padding:10px 14px 12px 64px;display:flex;flex-direction:column;gap:8px}
+.lapset{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.lapset .lbl{font-family:var(--display);font-weight:700;font-size:15px;min-width:30px}
+.lapset .heat{font-size:11.5px;color:var(--muted);min-width:118px}
+.lapset .heat a{white-space:nowrap}
+.laps{display:flex;flex-wrap:wrap;gap:4px}
+.lap{font-family:var(--display);font-size:15px;font-variant-numeric:tabular-nums;padding:1px 6px;border-radius:5px;background:var(--surface);border:1px solid var(--line)}
+.lap .ln{font-size:10px;color:var(--faint);margin-right:3px}
+.lap.w3{border-color:var(--accent)}
+.lap.fast{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.lap.fast .ln{color:inherit;opacity:.75}
+.lapmsg{font-size:12px;color:var(--faint)}
 
 .empty-state{padding:40px 20px;text-align:center;color:var(--muted)}
 .notice{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--muted)}
@@ -112,8 +129,49 @@ footer{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:
 footer b{color:var(--ink);font-weight:600}
 @media (prefers-reduced-motion:reduce){.dot,td.flash{animation:none}}
 @media (max-width:560px){
-  .status{align-items:flex-start;text-align:left}
-  .c-pilot{min-width:118px}
+  body{font-size:12px;padding-inline:8px;padding-block:10px 24px}
+  .wrap{gap:8px}
+  header{flex-wrap:nowrap;align-items:flex-start;gap:8px}
+  .eyebrow{font-size:10px;letter-spacing:.1em}
+  h1{font-size:22px;margin-top:1px}
+  .status{gap:0;font-size:10.5px;line-height:1.35;flex-shrink:0;max-width:52%}
+  .live{font-size:12px;gap:5px}
+  .dot{width:7px;height:7px}
+  #lastRace{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .controls{gap:6px;flex-wrap:wrap}
+  .seg{flex-basis:100%;display:flex}
+  .seg button{flex:1;font-size:13px;padding:5px 4px}
+  label.ctl{flex:1 1 0;min-width:0;gap:0}
+  label.ctl .lt{display:none}
+  select{width:100%;min-width:0;font-size:12px;padding:5px 22px 5px 7px;border-radius:6px}
+  .spacer{display:none}
+  .board{border-radius:8px}
+  table{min-width:0}
+  th,td{height:30px;padding:0 6px}
+  thead th{height:28px;font-size:10px;letter-spacing:.06em}
+  thead th .sub{font-size:8.5px}
+  .c-rank{width:34px;min-width:34px;max-width:34px;padding:0 0 0 6px}
+  .c-pilot{left:34px;min-width:0;max-width:112px;padding-right:6px;overflow:hidden;text-overflow:ellipsis}
+  .c-rank .pos{font-size:15px;min-width:0}
+  .delta{font-size:9px;margin-left:1px}
+  .c-pilot .caret{width:9px;font-size:8px}
+  .c-pilot .name{font-size:12px}
+  .c-pilot .meta{display:none}
+  th.c-best,td.c-best{padding-left:8px}
+  td.c-best{font-size:14px}
+  td.c-best .from{display:inline;font-size:9px;margin:0 0 0 3px}
+  .c-gap{font-size:11.5px}
+  td.rd{font-size:12.5px}
+  td.rd .rp{font-size:9px;margin-left:2px}
+  tr.detail .inner{max-width:calc(100vw - 18px);padding:6px 8px 8px;gap:5px}
+  .lapset{gap:2px 6px}
+  .lapset .lbl{font-size:13px;min-width:22px}
+  .lapset .heat{font-size:10.5px;min-width:0}
+  .laps{gap:3px}
+  .lap{font-size:12.5px;padding:0 4px;border-radius:4px}
+  .lap .ln{font-size:8.5px;margin-right:2px}
+  .notice{padding:8px 10px;font-size:11.5px}
+  footer{font-size:10.5px;gap:4px}
 }
 </style>
 </head>
@@ -140,19 +198,19 @@ footer b{color:var(--ink);font-weight:600}
       <button type="button" data-scope="practice" aria-pressed="false">Practice</button>
       <button type="button" data-scope="qualifier" aria-pressed="false">Qualifier</button>
     </div>
-    <label class="ctl" for="metric">順位の基準
+    <label class="ctl" for="metric"><span class="lt">順位の基準</span>
       <select id="metric">
+        <option value="lapsTime">Laps / Time</option>
         <option value="top3">Top 3 Consecutive</option>
         <option value="top2">Top 2 Consecutive</option>
         <option value="fastest">Fastest Lap</option>
-        <option value="lapsTime">Laps / Time</option>
       </select>
     </label>
-    <label class="ctl" for="klass" id="klassWrap" hidden>クラス
+    <label class="ctl" for="klass" id="klassWrap" hidden><span class="lt">クラス</span>
       <select id="klass"></select>
     </label>
     <span class="spacer"></span>
-    <label class="ctl" for="me">ハイライト
+    <label class="ctl" for="me"><span class="lt">ハイライト</span>
       <select id="me"><option value="">なし</option></select>
     </label>
   </div>
@@ -169,6 +227,7 @@ footer b{color:var(--ink);font-weight:600}
   <footer>
     <span>各パイロットについて、選んだ範囲のラウンドの中で一番いい記録をベストとして並べています。青字がそのパイロットのベストのラウンド、数字右の <b>#n</b> はそのラウンド内での順位です。</span>
     <span>Laps / Time は周回数が多い方が上、同じ周回数ならタイムが短い方が上。公式の予選順位（予選ポイントやタイブレーク）とは一致しないことがあります。</span>
+    <span>行をクリックすると、各ラウンドのラップタイムと LiveFPV のヒート結果へのリンクが開きます。青塗りがそのヒートの最速ラップ、青枠がベストの 3 連続ラップです。</span>
     <span>データ元: <a id="src" href="https://fdf2784.livefpv.com/results/" target="_blank" rel="noopener">LiveFPV Race Results</a>。30秒ごとに自動で更新します（LiveFPV 側の取得は約45秒キャッシュ）。</span>
   </footer>
 </div>
@@ -180,7 +239,7 @@ footer b{color:var(--ink);font-weight:600}
     get(k){ try{ return localStorage.getItem(k) }catch(e){ return null } },
     set(k,v){ try{ localStorage.setItem(k,v) }catch(e){} }
   };
-  const DEFAULT_METRIC = { all:"top3", practice:"top3", qualifier:"lapsTime" };
+  const DEFAULT_METRIC = { all:"lapsTime", practice:"lapsTime", qualifier:"lapsTime" };
   const ui = {
     scope: store.get("fdf.scope") || "all",
     metric: null,
@@ -190,6 +249,8 @@ footer b{color:var(--ink);font-weight:600}
   let state = null, lastSig = null;
   const prevRanks = {}; // key -> {pilot: rank}
   let deltas = {}, changedCells = new Set();
+  const open = new Set();   // expanded pilots
+  const laps = {};          // raceId -> {status:"loading"|"ok"|"err", data}
 
   /* ---------- value parsing ---------- */
   function secs(s){
@@ -261,7 +322,7 @@ footer b{color:var(--ink);font-weight:600}
     for(const pl of pilots.values()){
       pl.cells = roundPos.map(({r, rows, pos}) => {
         const row = rows.find(x => x.driver === pl.name);
-        return {v: val(row, metric), pos: pos[pl.name], flown: !!row, r};
+        return {v: val(row, metric), pos: pos[pl.name], flown: !!row, r, row};
       });
       let best = null, bi = -1;
       pl.cells.forEach((c,i) => { if(c.v != null && (best == null || cmp(c.v,best,metric) < 0)){ best = c.v; bi = i; } });
@@ -319,8 +380,9 @@ footer b{color:var(--ink);font-weight:600}
       const d = deltas[p.name];
       const dh = d === "new" ? '<span class="delta up">NEW</span>' : d > 0 ? `<span class="delta up">▲${d}</span>` : d < 0 ? `<span class="delta down">▼${-d}</span>` : "";
       const from = p.bestIdx >= 0 ? short(p.cells[p.bestIdx].r) : "";
-      b += `<tr class="${cls}"><td class="c-rank"><span class="pos">${p.rank ?? "–"}</span>${dh}</td>`;
-      b += `<td class="c-pilot"><span class="name">${esc(p.name)}</span><span class="meta">${p.count}R</span></td>`;
+      const isOpen = open.has(p.name);
+      b += `<tr class="pl ${cls}" data-pilot="${esc(p.name)}" aria-expanded="${isOpen}"><td class="c-rank"><span class="pos">${p.rank ?? "–"}</span>${dh}</td>`;
+      b += `<td class="c-pilot"><span class="caret">${isOpen ? "▾" : "▸"}</span><span class="name">${esc(p.name)}</span><span class="meta">${p.count}R</span></td>`;
       b += `<td class="c-best">${fmt(p.best, metric)}${from ? `<span class="from">${from}</span>` : ""}</td>`;
       b += `<td class="c-gap">${p.rank === 1 ? "" : gap(p.best, lead, metric)}</td>`;
       p.cells.forEach((c,i) => {
@@ -334,8 +396,55 @@ footer b{color:var(--ink);font-weight:600}
         }
       });
       b += "</tr>";
+      if(isOpen) b += `<tr class="detail"><td colspan="${4 + rounds.length}"><div class="inner">${lapDetail(p)}</div></td></tr>`;
     });
     $("#tbody").innerHTML = b;
+  }
+
+  /* ---------- lap detail ---------- */
+  function raceUrl(id){
+    const base = (state.source || "").replace(/\/results\/?$/, "");
+    return `${base}/results/?p=view_race_result&id=${encodeURIComponent(id)}`;
+  }
+  function loadLaps(id){
+    if(!id || laps[id]) return;
+    laps[id] = {status: "loading"};
+    fetch("laps.json?race=" + encodeURIComponent(id), {cache: "no-store"})
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+      .then(d => { laps[id] = {status: "ok", data: d}; render(); })
+      .catch(() => { laps[id] = {status: "err"}; render(); });
+  }
+  function lapChips(ts){
+    const v = ts.map(secs);
+    let fi = -1, w = -1, ws = Infinity;
+    v.forEach((x,i) => { if(x != null && (fi < 0 || x < v[fi])) fi = i; });
+    for(let i = 0; i + 3 <= v.length; i++){
+      const t = v.slice(i, i+3); if(t.some(x => x == null)) continue;
+      const sum = t[0] + t[1] + t[2]; if(sum < ws){ ws = sum; w = i; }
+    }
+    return '<span class="laps">' + ts.map((t,i) => {
+      const c = ["lap", i === fi ? "fast" : "", w >= 0 && i >= w && i < w + 3 ? "w3" : ""].join(" ");
+      return `<span class="${c}"><span class="ln">L${i+1}</span>${fmtT(v[i])}</span>`;
+    }).join("") + "</span>";
+  }
+  function lapDetail(p){
+    const flown = p.cells.filter(c => c.row);
+    if(!flown.length) return '<span class="lapmsg">この範囲では飛んでいません</span>';
+    return flown.map(c => {
+      const id = c.row.raceId;
+      const link = id ? `<a href="${esc(raceUrl(id))}" target="_blank" rel="noopener">Heat ${esc(c.row.heat || "")} ↗</a>` : esc(c.row.heat || "");
+      loadLaps(id);
+      const L = laps[id];
+      let body;
+      if(!id) body = '<span class="lapmsg">レース ID なし</span>';
+      else if(!L || L.status === "loading") body = '<span class="lapmsg">読み込み中…</span>';
+      else if(L.status === "err") body = '<span class="lapmsg">ラップを取得できませんでした</span>';
+      else {
+        const ts = L.data.drivers[p.name];
+        body = ts && ts.length ? lapChips(ts) : '<span class="lapmsg">ラップなし</span>';
+      }
+      return `<div class="lapset"><span class="lbl">${short(c.r)}</span><span class="heat">${link}</span>${body}</div>`;
+    }).join("");
   }
 
   function renderMeta(){
@@ -373,7 +482,7 @@ footer b{color:var(--ink);font-weight:600}
 
   function diffCells(oldS, newS){
     if(!oldS) return;
-    const idx = s => { const m = {}; s.rounds.forEach(r => Object.values(r.classes||{}).forEach(rows => rows.forEach(x => m[x.driver + "|" + r.id] = JSON.stringify(x)))); return m; };
+    const idx = s => { const m = {}; s.rounds.forEach(r => Object.values(r.classes||{}).forEach(rows => rows.forEach(x => m[x.driver + "|" + r.id] = [x.lapsTime, x.top3, x.top2, x.fastest].join("|")))); return m; };
     const a = idx(oldS), b = idx(newS);
     for(const k in b) if(a[k] !== b[k]) changedCells.add(k);
   }
@@ -390,6 +499,7 @@ footer b{color:var(--ink);font-weight:600}
       lastSig = sig;
     }
     render();
+    changedCells = new Set(); // flash once per change, not on every later re-render
     tickStatus();
   }
 
@@ -401,6 +511,13 @@ footer b{color:var(--ink);font-weight:600}
   });
   $("#metric").addEventListener("change", e => { ui.metric = e.target.value; deltas = {}; changedCells = new Set(); render(); });
   $("#klass").addEventListener("change", e => { ui.klass = e.target.value; deltas = {}; render(); });
+  $("#tbody").addEventListener("click", e => {
+    if(e.target.closest("a")) return;
+    const tr = e.target.closest("tr.pl"); if(!tr) return;
+    const name = tr.dataset.pilot;
+    if(open.has(name)) open.delete(name); else open.add(name);
+    render();
+  });
   $("#me").addEventListener("change", e => { ui.me = e.target.value; store.set("fdf.me", ui.me); render(); });
   setInterval(tickStatus, 5000);
 
