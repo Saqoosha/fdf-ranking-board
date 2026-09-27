@@ -229,6 +229,7 @@ footer b{color:var(--ink);font-weight:600}
     <span>各パイロットについて、選んだ範囲のラウンドの中で一番いい記録をベストとして並べています。青字がそのパイロットのベストのラウンド、数字右の <b>#n</b> はそのラウンド内での順位です。</span>
     <span>Laps / Time は周回数が多い方が上、同じ周回数ならタイムが短い方が上。公式の予選順位（予選ポイントやタイブレーク）とは一致しないことがあります。</span>
     <span>行をクリックすると、各ラウンドのラップタイムと LiveFPV のヒート結果へのリンクが開きます。青塗りがそのヒートの最速ラップ、青枠がベストの 3 連続ラップです。</span>
+    <span id="minLapNote" hidden></span>
     <span>データ元: <a id="src" href="https://fdf2784.livefpv.com/results/" target="_blank" rel="noopener">LiveFPV Race Results</a>。30秒ごとに自動で更新します（LiveFPV 側の取得は約45秒キャッシュ）。</span>
   </footer>
 </div>
@@ -461,6 +462,9 @@ footer b{color:var(--ink);font-weight:600}
   function renderMeta(){
     $("#event").textContent = state.event || "FDF Cup Ranking Board";
     if(state.source) $("#src").href = state.source;
+    const ml = $("#minLapNote");
+    ml.hidden = !state.minLap;
+    ml.textContent = state.minLap ? `${state.minLap}秒未満のラップは誤検知として扱い、次のラップに足しています（最後の周なら切り捨て）。ラップ数・タイム・ベストはそれで計算し直しています。` : "";
     $("#lastRace").textContent = state.lastRace ? "最新レース: " + state.lastRace.replace(/\s+/g," ") + (state.lastRaceAt ? "（" + state.lastRaceAt.replace(/^.*at /,"") + "）" : "") : "";
     const ks = classesOf(state);
     const ksel = $("#klass");
