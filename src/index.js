@@ -181,12 +181,14 @@ async function scrape(base, min) {
   const order = { practice: 0, qualifier: 1 };
   rounds.sort((a, b) => ((order[a.kind] ?? 2) - (order[b.kind] ?? 2)) || a.n - b.n);
   await fixShortLaps(base, rounds, min);
+  const mains = await scrapeMains(base, res, min);
 
   const race = res.match(/view_race_result&(?:amp;)?id=\d+"[^>]*>([\s\S]*?)<\/a><\/td>\s*<td[^>]*>([\s\S]*?)<\/td>/);
   return {
     event,
     source: base + "/results/",
     rounds,
+    mains,
     lastRace: race ? text(race[1]) : "",
     lastRaceAt: race ? text(race[2]) : "",
     minLap: min,
@@ -270,14 +272,93 @@ async function fixShortLaps(base, rounds, min) {
     [id, parseRace(await get(`${base}/results/?p=view_race_result&id=${id}`), id, "").drivers])));
   for (const row of rows) {
     const raw = races[row.raceId][row.driver];
-    if (!raw) continue;
-    const { laps, dropped } = cleanLaps(raw, min);
-    const total = secs(String(row.lapsTime).split("/")[1]);
-    if (total != null) row.lapsTime = `${laps.length}/${fmtT(total - dropped)}`;
-    row.fastest = laps.length ? fmtT(Math.min(...laps)) : "";
-    row.avg = laps.length ? fmtT(laps.reduce((a, b) => a + b, 0) / laps.length) : "";
-    row.top2 = bestWindow(laps, 2);
-    row.top3 = bestWindow(laps, 3);
-    row.minLapFixed = true;
+    if (raw) recomputeRow(row, raw, min);
   }
+}
+
+function recomputeRow(row, raw, min) {
+  const { laps, dropped } = cleanLaps(raw, min);
+  const total = secs(String(row.lapsTime).split("/")[1]);
+  if (total != null) row.lapsTime = `${laps.length}/${fmtT(total - dropped)}`;
+  row.fastest = laps.length ? fmtT(Math.min(...laps)) : "";
+  row.avg = laps.length ? fmtT(laps.reduce((a, b) => a + b, 0) / laps.length) : "";
+  row.top2 = bestWindow(laps, 2);
+  row.top3 = bestWindow(laps, 3);
+  row.minLapFixed = true;
+}
+
+/* ---------------- mains ---------------- */
+
+// "Pro Class Racing A1-Main" -> { klass: "Pro Class Racing", main: "A", n: 1 }
+function mainHeat(label) {
+  const m = label.match(/^(.*?)\s*([A-Z])(\d+)-Main\b/);
+  return m ? { klass: m[1].trim(), main: m[2], n: Number(m[3]), name: m[2] + m[3] } : null;
+}
+
+// Heats and pilots come from the "Main Events" heat sheet, so the mains show before they are run.
+// Results come from the races listed under a "Main" heading on the results page.
+async function scrapeMains(base, res, min) {
+  const sheetLink = [...res.matchAll(/href="(\/results\/\?p=view_heat_sheet&(?:amp;)?id=\d+)"[^>]*>([\s\S]*?)<\/a>/g)]
+    .find((m) => /Main/.test(text(m[2])));
+  if (!sheetLink) return [];
+  const sheetUrl = base + sheetLink[1].replace(/&amp;/g, "&");
+  const sheet = await get(sheetUrl);
+
+  const heats = new Map();
+  for (const part of sheet.split('<span class="class_header">').slice(1)) {
+    const h = mainHeat(text(part.split("</span>")[0]));
+    if (!h) continue;
+    const status = part.match(/class="race_status">([\s\S]*?)<\/span>/);
+    const pilots = [...part.split("table_spacer")[0].matchAll(/<span class="car_num">[^<]*<\/span>([^<]+)<\/td>/g)].map((m) => text(m[1]));
+    heats.set(h.name, { ...h, status: status ? text(status[1]).replace(/^Status:\s*/, "").replace(/\s*\(View Results\)$/, "") : "", pilots, raceId: null, url: sheetUrl, rows: [] });
+  }
+
+  // walk the race table in order, remembering which round heading each race sits under
+  const raceIds = [];
+  let heading = "";
+  for (const m of res.matchAll(/<th>([^<]*)<\/th>\s*<th>Time Completed<\/th>|view_race_result&(?:amp;)?id=(\d+)"/g)) {
+    if (m[1] != null) heading = text(m[1]);
+    else if (/Main/.test(heading)) raceIds.push(m[2]);
+  }
+  await Promise.all(raceIds.map(async (id) => {
+    const url = `${base}/results/?p=view_race_result&id=${id}`;
+    const page = await get(url);
+    const hdr = page.match(/class="class_header">([\s\S]*?)<\/span>/);
+    const h = hdr && mainHeat(text(hdr[1]));
+    if (!h) return;
+    const heat = heats.get(h.name) || { ...h, status: "", pilots: [], url, rows: [] };
+    heat.raceId = id;
+    heat.url = url;
+    heat.rows = parseRaceRows(page, id, heat.name, min);
+    heats.set(h.name, heat);
+  }));
+
+  const mains = new Map();
+  for (const h of [...heats.values()].sort((a, b) => a.main.localeCompare(b.main) || a.n - b.n)) {
+    if (!mains.has(h.main)) mains.set(h.main, { name: h.main, heats: [] });
+    mains.get(h.main).heats.push(h);
+  }
+  return [...mains.values()];
+}
+
+// result rows of one race, in the same shape parseRound produces
+function parseRaceRows(page, raceId, heatName, min) {
+  const laps = parseRace(page, raceId, "").drivers;
+  const table = page.split('class="table table-striped race_result"')[1] || "";
+  const heads = [...(table.split("</thead>")[0]).matchAll(/<th>([\s\S]*?)<\/th>/g)].map((m) => text(m[1]));
+  const col = (name) => heads.indexOf(name);
+  const rows = [];
+  for (const tr of (table.split("<tbody>")[1] || "").split("</tbody>")[0].matchAll(/<tr>([\s\S]*?)<\/tr>/g)) {
+    const name = tr[1].match(/class="driver_name">([^<]*)</);
+    if (!name) continue;
+    const tds = [...tr[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1]);
+    const cell = (h) => (col(h) >= 0 && tds[col(h)] != null ? text(tds[col(h)].replace(/<sup>[\s\S]*?<\/sup>/g, "")) : "");
+    const driver = text(name[1]);
+    const row = { pos: cell("Pos"), driver, lapsTime: cell("Laps/Time"), fastest: "", avg: "", top2: "", top3: "", raceId, heat: heatName };
+    const raw = laps[driver];
+    if (raw) recomputeRow(row, raw, min);
+    delete row.minLapFixed;
+    rows.push(row);
+  }
+  return rows;
 }
