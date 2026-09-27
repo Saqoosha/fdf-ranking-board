@@ -1,0 +1,13 @@
+name = "fdf-ranking-board"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# page.html is imported as a string
+[[rules]]
+type = "Text"
+globs = ["**/*.html"]
+fallthrough = true
+
+[vars]
+LIVEFPV_BASE = "https://fdf2784.livefpv.com"
+CACHE_TTL = "45"

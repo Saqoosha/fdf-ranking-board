@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>FDF Cup Ranking Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#F2F4F7; --surface:#FFFFFF; --ink:#0E1621; --muted:#5A6576; --faint:#98A2B1;
+  --line:#DDE2E9; --line-strong:#C3CAD4;
+  --accent:#1D55F0; --accent-soft:#E7EEFF; --accent-ink:#FFFFFF;
+  --me:#FFF3CF; --me-edge:#E0A400;
+  --up:#0F8A4B; --down:#C2372B; --warn:#B36B00; --warn-soft:#FFF1DB;
+  --flash:#DDF6E6;
+  --display:"Barlow Condensed","Arial Narrow","Helvetica Neue",Arial,sans-serif;
+  --body:"IBM Plex Sans JP","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#0B0F15; --surface:#121820; --ink:#E7ECF2; --muted:#8C97A7; --faint:#5D6878;
+    --line:#212A35; --line-strong:#2E3947;
+    --accent:#6F95FF; --accent-soft:#1A2744; --accent-ink:#0B0F15;
+    --me:#3A2F10; --me-edge:#E8B634;
+    --up:#46C585; --down:#FF7466; --warn:#F0A63A; --warn-soft:#33240D;
+    --flash:#12321F;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#0B0F15; --surface:#121820; --ink:#E7ECF2; --muted:#8C97A7; --faint:#5D6878;
+  --line:#212A35; --line-strong:#2E3947;
+  --accent:#6F95FF; --accent-soft:#1A2744; --accent-ink:#0B0F15;
+  --me:#3A2F10; --me-edge:#E8B634;
+  --up:#46C585; --down:#FF7466; --warn:#F0A63A; --warn-soft:#33240D;
+  --flash:#12321F;
+}
+*{box-sizing:border-box}
+html{color-scheme:light}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.5;padding-inline:16px;padding-block:20px 40px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+a{color:var(--accent)}
+.num{font-family:var(--display);font-variant-numeric:tabular-nums;letter-spacing:.01em}
+
+/* header */
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px}
+.eyebrow{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,6vw,46px);line-height:1;margin:4px 0 0;letter-spacing:.01em;text-wrap:balance}
+.status{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:12.5px;color:var(--muted);text-align:right}
+.live{display:inline-flex;align-items:center;gap:8px;font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--up);box-shadow:0 0 0 0 color-mix(in srgb,var(--up) 60%,transparent);animation:pulse 2s infinite}
+.live.stale .dot{background:var(--warn);animation:none}
+.live.off .dot{background:var(--faint);animation:none}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--up) 55%,transparent)}70%{box-shadow:0 0 0 8px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+/* controls */
+.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{appearance:none;border:0;background:transparent;color:var(--muted);font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.06em;text-transform:uppercase;padding:7px 14px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.seg button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+label.ctl{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+select{font-family:var(--body);font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:6px 28px 6px 10px}
+.spacer{flex:1}
+
+/* table */
+.board{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.scroll{overflow-x:auto}
+table{border-collapse:separate;border-spacing:0;width:100%;min-width:720px}
+th,td{padding:0 10px;height:42px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:right;background:var(--surface)}
+thead th{height:38px;font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);position:sticky;top:0;z-index:2}
+thead th.rd.empty{color:var(--faint)}
+thead th .sub{display:block;font-size:10.5px;letter-spacing:.06em;color:var(--faint);line-height:1}
+tbody tr:last-child td{border-bottom:0}
+.c-rank,.c-pilot{text-align:left;position:sticky;z-index:1}
+.c-rank{left:0;width:64px;min-width:64px;max-width:64px;padding-right:0}
+.c-pilot{left:64px;min-width:150px;border-right:1px solid var(--line);padding-right:14px}
+th.c-best,td.c-best{padding-left:16px}
+thead .c-rank,thead .c-pilot{z-index:3}
+.c-rank .pos{font-family:var(--display);font-weight:700;font-size:22px;font-variant-numeric:tabular-nums;display:inline-block;min-width:26px}
+.delta{font-family:var(--display);font-weight:600;font-size:11px;margin-left:2px}
+.delta.up{color:var(--up)}.delta.down{color:var(--down)}
+.c-pilot .name{font-weight:600;font-size:14px}
+.c-pilot .meta{font-size:11px;color:var(--faint);margin-left:6px}
+td.c-best{font-family:var(--display);font-weight:700;font-size:20px;font-variant-numeric:tabular-nums;color:var(--ink)}
+td.c-best .from{display:block;font-family:var(--body);font-weight:500;font-size:10.5px;color:var(--muted);line-height:1;margin-top:-2px}
+.c-gap{font-family:var(--display);font-size:15px;color:var(--muted);font-variant-numeric:tabular-nums}
+td.rd{font-family:var(--display);font-size:16px;font-variant-numeric:tabular-nums;color:var(--muted)}
+td.rd .rp{font-size:11px;color:var(--faint);margin-left:5px}
+td.rd.best{color:var(--accent);font-weight:700}
+td.rd.best .rp{color:var(--accent)}
+td.rd.none{color:var(--faint)}
+td.rd.divider,th.rd.divider{border-left:1px solid var(--line-strong)}
+tr.podium .pos{color:var(--accent)}
+tr.me td{background:var(--me)}
+tr.me .c-rank{box-shadow:inset 3px 0 0 var(--me-edge)}
+tr.nodata td{color:var(--faint)}
+tr.nodata .pos{color:var(--faint)}
+td.flash{animation:flash 2.4s ease-out}
+@keyframes flash{0%{background:var(--flash)}100%{background:inherit}}
+tr.me td.flash{animation:none}
+
+.empty-state{padding:40px 20px;text-align:center;color:var(--muted)}
+.notice{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--muted)}
+.notice.warn{border-color:color-mix(in srgb,var(--warn) 40%,var(--line));background:var(--warn-soft);color:var(--ink)}
+
+footer{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px;max-width:72ch}
+footer b{color:var(--ink);font-weight:600}
+@media (prefers-reduced-motion:reduce){.dot,td.flash{animation:none}}
+@media (max-width:560px){
+  .status{align-items:flex-start;text-align:left}
+  .c-pilot{min-width:118px}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow" id="track">LiveFPV · FDF</div>
+      <h1 id="event">FDF Cup Ranking Board</h1>
+    </div>
+    <div class="status">
+      <span class="live off" id="live"><span class="dot"></span><span id="liveLabel">接続中</span></span>
+      <span id="fetched">データ待ち</span>
+      <span id="lastRace"></span>
+    </div>
+  </header>
+
+  <div id="banner" class="notice" hidden></div>
+
+  <div class="controls">
+    <div class="seg" role="group" aria-label="集計範囲" id="scopeSeg">
+      <button type="button" data-scope="all" aria-pressed="true">総合</button>
+      <button type="button" data-scope="practice" aria-pressed="false">Practice</button>
+      <button type="button" data-scope="qualifier" aria-pressed="false">Qualifier</button>
+    </div>
+    <label class="ctl" for="metric">順位の基準
+      <select id="metric">
+        <option value="top3">Top 3 Consecutive</option>
+        <option value="top2">Top 2 Consecutive</option>
+        <option value="fastest">Fastest Lap</option>
+        <option value="lapsTime">Laps / Time</option>
+      </select>
+    </label>
+    <label class="ctl" for="klass" id="klassWrap" hidden>クラス
+      <select id="klass"></select>
+    </label>
+    <span class="spacer"></span>
+    <label class="ctl" for="me">ハイライト
+      <select id="me"><option value="">なし</option></select>
+    </label>
+  </div>
+
+  <div class="board">
+    <div class="scroll">
+      <table>
+        <thead id="thead"></thead>
+        <tbody id="tbody"><tr><td colspan="12" class="empty-state" style="text-align:center">データを読み込んでいます</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    <span>各パイロットについて、選んだ範囲のラウンドの中で一番いい記録をベストとして並べています。青字がそのパイロットのベストのラウンド、数字右の <b>#n</b> はそのラウンド内での順位です。</span>
+    <span>Laps / Time は周回数が多い方が上、同じ周回数ならタイムが短い方が上。公式の予選順位（予選ポイントやタイブレーク）とは一致しないことがあります。</span>
+    <span>データ元: <a id="src" href="https://fdf2784.livefpv.com/results/" target="_blank" rel="noopener">LiveFPV Race Results</a>。30秒ごとに自動で更新します（LiveFPV 側の取得は約45秒キャッシュ）。</span>
+  </footer>
+</div>
+
+<script>
+(function(){
+  const $ = s => document.querySelector(s);
+  const store = {
+    get(k){ try{ return localStorage.getItem(k) }catch(e){ return null } },
+    set(k,v){ try{ localStorage.setItem(k,v) }catch(e){} }
+  };
+  const DEFAULT_METRIC = { all:"top3", practice:"top3", qualifier:"lapsTime" };
+  const ui = {
+    scope: store.get("fdf.scope") || "all",
+    metric: null,
+    klass: null,
+    me: store.get("fdf.me") || ""
+  };
+  let state = null, lastSig = null;
+  const prevRanks = {}; // key -> {pilot: rank}
+  let deltas = {}, changedCells = new Set();
+
+  /* ---------- value parsing ---------- */
+  function secs(s){
+    if(!s) return null;
+    s = String(s).trim();
+    if(!/\d/.test(s)) return null;
+    const p = s.split(":");
+    let v = 0;
+    for(const x of p) v = v*60 + parseFloat(x);
+    return isFinite(v) && v > 0 ? v : null;
+  }
+  function parseLT(s){
+    if(!s || !/\//.test(s)) return null;
+    const [l,t] = s.split("/");
+    const laps = parseInt(l,10), time = secs(t);
+    if(!laps) return null;
+    return {laps, time: time ?? 0};
+  }
+  function val(row, metric){
+    if(!row) return null;
+    return metric === "lapsTime" ? parseLT(row.lapsTime) : secs(row[metric]);
+  }
+  function cmp(a,b,metric){
+    if(a == null && b == null) return 0;
+    if(a == null) return 1;
+    if(b == null) return -1;
+    if(metric === "lapsTime") return (b.laps - a.laps) || (a.time - b.time);
+    return a - b;
+  }
+  function fmtT(v){
+    if(v == null) return "—";
+    if(v >= 60){ const m = Math.floor(v/60); return m + ":" + (v - m*60).toFixed(3).padStart(6,"0"); }
+    return v.toFixed(3);
+  }
+  function fmt(v, metric){
+    if(v == null) return "—";
+    return metric === "lapsTime" ? v.laps + "L " + fmtT(v.time) : fmtT(v);
+  }
+  function gap(v, lead, metric){
+    if(v == null || lead == null) return "";
+    if(metric === "lapsTime"){
+      if(v.laps < lead.laps) return "−" + (lead.laps - v.laps) + "L";
+      const d = v.time - lead.time; return d <= 0 ? "—" : "+" + d.toFixed(3);
+    }
+    const d = v - lead; return d <= 0 ? "—" : "+" + d.toFixed(3);
+  }
+  const short = r => (r.kind === "practice" ? "P" : r.kind === "qualifier" ? "Q" : "R") + r.n;
+
+  /* ---------- compute ---------- */
+  function classesOf(s){
+    const set = new Set();
+    s.rounds.forEach(r => Object.keys(r.classes || {}).forEach(c => set.add(c)));
+    return [...set];
+  }
+  function compute(){
+    const metric = ui.metric || DEFAULT_METRIC[ui.scope];
+    const rounds = state.rounds.filter(r => ui.scope === "all" ? (r.kind === "practice" || r.kind === "qualifier") : r.kind === ui.scope);
+    const pilots = new Map();
+    const roundPos = rounds.map(r => {
+      const rows = (r.classes && r.classes[ui.klass]) || [];
+      const list = rows.map(row => ({p: row.driver, v: val(row, metric)})).filter(x => x.v != null);
+      list.sort((a,b) => cmp(a.v,b.v,metric));
+      const pos = {}; list.forEach((x,i) => pos[x.p] = i+1);
+      rows.forEach(row => {
+        if(!pilots.has(row.driver)) pilots.set(row.driver, {name: row.driver, cells: []});
+      });
+      return {r, rows, pos};
+    });
+    for(const pl of pilots.values()){
+      pl.cells = roundPos.map(({r, rows, pos}) => {
+        const row = rows.find(x => x.driver === pl.name);
+        return {v: val(row, metric), pos: pos[pl.name], flown: !!row, r};
+      });
+      let best = null, bi = -1;
+      pl.cells.forEach((c,i) => { if(c.v != null && (best == null || cmp(c.v,best,metric) < 0)){ best = c.v; bi = i; } });
+      pl.best = best; pl.bestIdx = bi;
+      pl.count = pl.cells.filter(c => c.v != null).length;
+    }
+    const list = [...pilots.values()].sort((a,b) => cmp(a.best,b.best,metric) || a.name.localeCompare(b.name));
+    let rank = 0;
+    list.forEach(p => { p.rank = p.best != null ? ++rank : null; });
+    return {metric, rounds, list, lead: list[0] ? list[0].best : null};
+  }
+
+  /* ---------- deltas between updates ---------- */
+  function trackChanges(){
+    deltas = {}; changedCells = new Set();
+    const key = ui.scope + "|" + (ui.metric || DEFAULT_METRIC[ui.scope]) + "|" + ui.klass;
+    const res = compute();
+    const now = {};
+    res.list.forEach(p => { if(p.rank) now[p.name] = p.rank; });
+    const prev = prevRanks[key];
+    if(prev){
+      for(const [n,r] of Object.entries(now)){
+        if(prev[n] && prev[n] !== r) deltas[n] = prev[n] - r;
+        if(!prev[n]) deltas[n] = "new";
+      }
+    }
+    prevRanks[key] = now;
+  }
+
+  /* ---------- render ---------- */
+  function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+  function render(){
+    if(!state) return;
+    const res = compute();
+    const {metric, rounds, list, lead} = res;
+    $("#metric").value = metric;
+    document.querySelectorAll("#scopeSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.scope === ui.scope)));
+
+    let h = '<tr><th class="c-rank">Pos</th><th class="c-pilot">Pilot</th><th class="c-best">Best</th><th>Gap</th>';
+    rounds.forEach((r,i) => {
+      const has = Object.values(r.classes || {}).some(rows => rows.length);
+      const div = i > 0 && rounds[i-1].kind !== r.kind ? " divider" : "";
+      h += `<th class="rd${has ? "" : " empty"}${div}"><a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${short(r)}</a><span class="sub">${has ? r.kind : "未実施"}</span></th>`;
+    });
+    h += "</tr>";
+    $("#thead").innerHTML = h;
+
+    if(!list.length){
+      $("#tbody").innerHTML = `<tr><td colspan="${4 + rounds.length}" class="empty-state" style="text-align:center">この範囲にはまだ結果がありません</td></tr>`;
+      return;
+    }
+    let b = "";
+    list.forEach(p => {
+      const cls = [p.rank && p.rank <= 3 ? "podium" : "", p.name === ui.me ? "me" : "", p.best == null ? "nodata" : ""].join(" ");
+      const d = deltas[p.name];
+      const dh = d === "new" ? '<span class="delta up">NEW</span>' : d > 0 ? `<span class="delta up">▲${d}</span>` : d < 0 ? `<span class="delta down">▼${-d}</span>` : "";
+      const from = p.bestIdx >= 0 ? short(p.cells[p.bestIdx].r) : "";
+      b += `<tr class="${cls}"><td class="c-rank"><span class="pos">${p.rank ?? "–"}</span>${dh}</td>`;
+      b += `<td class="c-pilot"><span class="name">${esc(p.name)}</span><span class="meta">${p.count}R</span></td>`;
+      b += `<td class="c-best">${fmt(p.best, metric)}${from ? `<span class="from">${from}</span>` : ""}</td>`;
+      b += `<td class="c-gap">${p.rank === 1 ? "" : gap(p.best, lead, metric)}</td>`;
+      p.cells.forEach((c,i) => {
+        const div = i > 0 && rounds[i-1].kind !== c.r.kind ? " divider" : "";
+        const k = p.name + "|" + c.r.id;
+        const fl = changedCells.has(k) ? " flash" : "";
+        if(c.v == null){
+          b += `<td class="rd none${div}${fl}">${c.flown ? "DNF" : "—"}</td>`;
+        } else {
+          b += `<td class="rd${i === p.bestIdx ? " best" : ""}${div}${fl}">${fmt(c.v, metric)}<span class="rp">#${c.pos}</span></td>`;
+        }
+      });
+      b += "</tr>";
+    });
+    $("#tbody").innerHTML = b;
+  }
+
+  function renderMeta(){
+    $("#event").textContent = state.event || "FDF Cup Ranking Board";
+    if(state.source) $("#src").href = state.source;
+    $("#lastRace").textContent = state.lastRace ? "最新レース: " + state.lastRace.replace(/\s+/g," ") + (state.lastRaceAt ? "（" + state.lastRaceAt.replace(/^.*at /,"") + "）" : "") : "";
+    const ks = classesOf(state);
+    const ksel = $("#klass");
+    if(!ui.klass || !ks.includes(ui.klass)) ui.klass = ks[0] || null;
+    ksel.innerHTML = ks.map(k => `<option${k === ui.klass ? " selected" : ""}>${esc(k)}</option>`).join("");
+    $("#klassWrap").hidden = ks.length < 2;
+    const names = new Set();
+    state.rounds.forEach(r => Object.values(r.classes || {}).forEach(rows => rows.forEach(x => names.add(x.driver))));
+    const msel = $("#me");
+    msel.innerHTML = '<option value="">なし</option>' + [...names].sort().map(n => `<option${n === ui.me ? " selected" : ""}>${esc(n)}</option>`).join("");
+  }
+
+  function tickStatus(){
+    const live = $("#live"), lbl = $("#liveLabel");
+    if(!state){ return; }
+    const t = new Date(state.fetchedAt);
+    const age = Math.max(0, (Date.now() - t.getTime())/1000);
+    const hhmm = t.toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    const ago = age < 60 ? Math.round(age) + "秒前" : age < 3600 ? Math.round(age/60) + "分前" : Math.round(age/3600) + "時間前";
+    $("#fetched").textContent = `最終取得 ${hhmm}（${ago}）`;
+    const stale = age > 900;
+    live.className = "live" + (stale ? " stale" : "");
+    lbl.textContent = stale ? "更新停止中" : "Live";
+    const bn = $("#banner");
+    if(stale){
+      bn.hidden = false; bn.className = "notice warn";
+      bn.textContent = "15分以上データを取得できていません。LiveFPV に接続できていない可能性があります。表示は最後に取得した時点の結果です。";
+    } else bn.hidden = true;
+  }
+
+  function diffCells(oldS, newS){
+    if(!oldS) return;
+    const idx = s => { const m = {}; s.rounds.forEach(r => Object.values(r.classes||{}).forEach(rows => rows.forEach(x => m[x.driver + "|" + r.id] = JSON.stringify(x)))); return m; };
+    const a = idx(oldS), b = idx(newS);
+    for(const k in b) if(a[k] !== b[k]) changedCells.add(k);
+  }
+
+  function onData(s){
+    if(!s || !Array.isArray(s.rounds)) return;
+    const sig = JSON.stringify(s.rounds);
+    const old = state;
+    state = s;
+    renderMeta();
+    if(sig !== lastSig){
+      trackChanges();
+      diffCells(old, s);
+      lastSig = sig;
+    }
+    render();
+    tickStatus();
+  }
+
+  /* ---------- controls ---------- */
+  $("#scopeSeg").addEventListener("click", e => {
+    const bt = e.target.closest("button"); if(!bt) return;
+    ui.scope = bt.dataset.scope; ui.metric = null; store.set("fdf.scope", ui.scope);
+    deltas = {}; changedCells = new Set(); render();
+  });
+  $("#metric").addEventListener("change", e => { ui.metric = e.target.value; deltas = {}; changedCells = new Set(); render(); });
+  $("#klass").addEventListener("change", e => { ui.klass = e.target.value; deltas = {}; render(); });
+  $("#me").addEventListener("change", e => { ui.me = e.target.value; store.set("fdf.me", ui.me); render(); });
+  setInterval(tickStatus, 5000);
+
+  /* ---------- data ---------- */
+  const POLL_MS = 30000;
+  let failing = 0;
+  async function poll(){
+    try{
+      const r = await fetch("data.json", {cache: "no-store"});
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      const s = await r.json();
+      failing = 0;
+      onData(s);
+    }catch(e){
+      failing++;
+      if(failing >= 3){
+        const bn = $("#banner"); bn.hidden = false; bn.className = "notice warn";
+        bn.textContent = "データを取得できていません（" + e.message + "）。30秒後に再試行します。";
+      }
+    }
+  }
+  poll();
+  setInterval(() => { if(!document.hidden) poll(); }, POLL_MS);
+  document.addEventListener("visibilitychange", () => { if(!document.hidden) poll(); });
+})();
+</script>
+</body>
+</html>
