@@ -62,7 +62,7 @@ async function getData(env, ctx, url) {
 async function getLaps(env, ctx, url) {
   const base = (env.LIVEFPV_BASE || "https://fdf2784.livefpv.com").replace(/\/$/, "");
   const race = url.searchParams.get("race") || "";
-  if (!/^\d+$/.test(race)) {
+  if (!/^\d{1,12}$/.test(race)) {
     return new Response(JSON.stringify({ error: "race must be numeric" }), {
       status: 400, headers: { "content-type": "application/json; charset=utf-8" },
     });
@@ -73,10 +73,12 @@ async function getLaps(env, ctx, url) {
   if (hit) return withHeaders(hit, "HIT");
   try {
     const src = `${base}/results/?p=view_race_result&id=${race}`;
-    const res = new Response(JSON.stringify(parseRace(await get(src), race, src)), {
+    const data = parseRace(await get(src), race, src);
+    const res = new Response(JSON.stringify(data), {
       headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=300" },
     });
-    ctx.waitUntil(cache.put(key, res.clone()));
+    // an empty parse may be a layout change or a placeholder page; don't pin it for 5 minutes
+    if (Object.keys(data.drivers).length) ctx.waitUntil(cache.put(key, res.clone()));
     return withHeaders(res, "MISS");
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e && e.message || e) }), {
@@ -191,15 +193,18 @@ async function scrape(base) {
 // lap 0 is the holeshot (start to first gate) and is dropped.
 function parseRace(page, id, url) {
   const jsStr = (s) => s.replace(/\\(.)/g, "$1");
-  const drivers = {};
+  const drivers = Object.create(null);
   for (const m of page.matchAll(/racerLaps\[\d+\]\s*=\s*\{([\s\S]*?)\n\s*\};/g)) {
     const name = m[1].match(/'driverName'\s*:\s*'((?:[^'\\]|\\.)*)'/);
     if (!name) continue;
     const laps = [];
-    for (const l of m[1].matchAll(/'lapNum'\s*:\s*'(\d+)'[\s\S]*?'time'\s*:\s*'([^']*)'/g)) {
-      if (l[1] !== "0") laps.push(l[2]);
+    // one chunk per lap object; searching each chunk once keeps this linear on odd input
+    for (const chunk of m[1].split(/'lapNum'\s*:\s*/).slice(1)) {
+      const n = chunk.match(/^'(\d+)'/);
+      const t = chunk.match(/'time'\s*:\s*'([^']*)'/);
+      if (n && t && n[1] !== "0") laps.push(t[1]);
     }
-    drivers[unescape(jsStr(name[1]))] = laps;
+    drivers[unescape(jsStr(name[1])).trim()] = laps;
   }
   const hdr = page.match(/class="class_header">([\s\S]*?)<\/span>/);
   const rnd = page.match(/class="class_sub_header">Round:\s*([\s\S]*?)<\/span>/);

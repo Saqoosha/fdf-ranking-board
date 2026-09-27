@@ -411,9 +411,11 @@ footer b{color:var(--ink);font-weight:600}
     laps[id] = {status: "loading"};
     fetch("laps.json?race=" + encodeURIComponent(id), {cache: "no-store"})
       .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
-      .then(d => { laps[id] = {status: "ok", data: d}; render(); })
-      .catch(() => { laps[id] = {status: "err"}; render(); });
+      .then(d => { laps[id] = {status: "ok", data: d}; }, () => { laps[id] = {status: "err"}; })
+      .then(render);
   }
+  // failed heats are retried when the row is reopened or new data arrives
+  function dropFailedLaps(){ for(const id in laps) if(laps[id].status === "err") delete laps[id]; }
   function lapChips(ts){
     const v = ts.map(secs);
     let fi = -1, w = -1, ws = Infinity;
@@ -494,6 +496,7 @@ footer b{color:var(--ink);font-weight:600}
     state = s;
     renderMeta();
     if(sig !== lastSig){
+      dropFailedLaps();
       trackChanges();
       diffCells(old, s);
       lastSig = sig;
@@ -515,7 +518,7 @@ footer b{color:var(--ink);font-weight:600}
     if(e.target.closest("a")) return;
     const tr = e.target.closest("tr.pl"); if(!tr) return;
     const name = tr.dataset.pilot;
-    if(open.has(name)) open.delete(name); else open.add(name);
+    if(open.has(name)) open.delete(name); else { open.add(name); dropFailedLaps(); }
     render();
   });
   $("#me").addEventListener("change", e => { ui.me = e.target.value; store.set("fdf.me", ui.me); render(); });
