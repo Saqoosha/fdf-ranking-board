@@ -104,6 +104,7 @@ td.flash{animation:flash 2.4s ease-out}
 @keyframes flash{0%{background:var(--flash)}100%{background:inherit}}
 tr.me td.flash{animation:none}
 tr.pl{cursor:pointer}
+tr.pl:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 tr.pl:hover td{background:color-mix(in srgb,var(--accent-soft) 45%,var(--surface))}
 tr.pl.me:hover td{background:var(--me)}
 .c-pilot .caret{display:inline-block;width:12px;color:var(--faint);font-size:10px}
@@ -381,7 +382,7 @@ footer b{color:var(--ink);font-weight:600}
       const dh = d === "new" ? '<span class="delta up">NEW</span>' : d > 0 ? `<span class="delta up">▲${d}</span>` : d < 0 ? `<span class="delta down">▼${-d}</span>` : "";
       const from = p.bestIdx >= 0 ? short(p.cells[p.bestIdx].r) : "";
       const isOpen = open.has(p.name);
-      b += `<tr class="pl ${cls}" data-pilot="${esc(p.name)}" aria-expanded="${isOpen}"><td class="c-rank"><span class="pos">${p.rank ?? "–"}</span>${dh}</td>`;
+      b += `<tr class="pl ${cls}" data-pilot="${esc(p.name)}" tabindex="0" aria-expanded="${isOpen}"><td class="c-rank"><span class="pos">${p.rank ?? "–"}</span>${dh}</td>`;
       b += `<td class="c-pilot"><span class="caret">${isOpen ? "▾" : "▸"}</span><span class="name">${esc(p.name)}</span><span class="meta">${p.count}R</span></td>`;
       b += `<td class="c-best">${fmt(p.best, metric)}${from ? `<span class="from">${from}</span>` : ""}</td>`;
       b += `<td class="c-gap">${p.rank === 1 ? "" : gap(p.best, lead, metric)}</td>`;
@@ -398,7 +399,10 @@ footer b{color:var(--ink);font-weight:600}
       b += "</tr>";
       if(isOpen) b += `<tr class="detail"><td colspan="${4 + rounds.length}"><div class="inner">${lapDetail(p)}</div></td></tr>`;
     });
+    // rebuilding the tbody drops keyboard focus; put it back on the same pilot's row
+    const focused = document.activeElement?.matches?.("#tbody tr.pl") ? document.activeElement.dataset.pilot : null;
     $("#tbody").innerHTML = b;
+    if(focused != null) [...document.querySelectorAll("#tbody tr.pl")].find(r => r.dataset.pilot === focused)?.focus();
   }
 
   /* ---------- lap detail ---------- */
@@ -519,12 +523,19 @@ footer b{color:var(--ink);font-weight:600}
   });
   $("#metric").addEventListener("change", e => { ui.metric = e.target.value; deltas = {}; changedCells = new Set(); render(); });
   $("#klass").addEventListener("change", e => { ui.klass = e.target.value; deltas = {}; render(); });
-  $("#tbody").addEventListener("click", e => {
-    if(e.target.closest("a")) return;
-    const tr = e.target.closest("tr.pl"); if(!tr) return;
+  function toggleRow(tr){
     const name = tr.dataset.pilot;
     if(open.has(name)) open.delete(name); else { open.add(name); dropFailedLaps(); }
     render();
+  }
+  $("#tbody").addEventListener("click", e => {
+    if(e.target.closest("a")) return;
+    const tr = e.target.closest("tr.pl"); if(tr) toggleRow(tr);
+  });
+  $("#tbody").addEventListener("keydown", e => {
+    if(e.key !== "Enter" && e.key !== " ") return;
+    const tr = e.target.closest("tr.pl"); if(!tr || e.target !== tr) return;
+    e.preventDefault(); toggleRow(tr);
   });
   $("#me").addEventListener("change", e => { ui.me = e.target.value; store.set("fdf.me", ui.me); render(); });
   setInterval(tickStatus, 5000);
