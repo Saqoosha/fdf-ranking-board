@@ -1,0 +1,16 @@
+{
+  "_note": "Main heat results captured 2026-09-27 before LiveFPV rebuilt Main Events into finals (A2/B2 races were deleted, A1/B1/C1 renamed to X-Main). Live pages are still read for the ids that exist.",
+  "klass": "Pro Class Racing",
+  "heats": [
+    { "name": "A1", "raceId": "7087380", "rows": [
+      { "driver": "KANATAFPV", "lapsTime": "3/50.676" }, { "driver": "SENA", "lapsTime": "3/1:05.834" }, { "driver": "SAQOOSHA", "lapsTime": "1/24.400" } ] },
+    { "name": "A2", "raceId": "7087381", "gone": true, "rows": [
+      { "driver": "GEGENGAFPV", "lapsTime": "3/1:03.108" }, { "driver": "DAICHI_FPV", "lapsTime": "3/1:08.451" }, { "driver": "MASUFPV", "lapsTime": "3/1:21.382" }, { "driver": "KERA", "lapsTime": "3/1:24.438" } ] },
+    { "name": "B1", "raceId": "7087383", "rows": [
+      { "driver": "INOUE-FPV", "lapsTime": "3/1:24.192" }, { "driver": "MASA_FPV", "lapsTime": "3/1:28.925" }, { "driver": "TSUKASA", "lapsTime": "3/1:30.455" } ] },
+    { "name": "B2", "raceId": "7087384", "gone": true, "rows": [
+      { "driver": "KUSU", "lapsTime": "3/1:20.273" }, { "driver": "HAMA", "lapsTime": "2/54.906" }, { "driver": "KPRO-FPV", "lapsTime": "1/31.633" } ] },
+    { "name": "C1", "raceId": "7087386", "rows": [
+      { "driver": "ICHIKAWAFPV", "lapsTime": "3/1:43.648", "top3": "1:31.544" }, { "driver": "REINAFPV", "lapsTime": "3/2:07.349", "top3": "2:04.194" }, { "driver": "CHAN-MINA", "lapsTime": "3/2:36.687", "top3": "2:33.872" } ] }
+  ]
+}

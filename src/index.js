@@ -7,6 +7,7 @@
 //   CACHE_TTL     seconds to reuse a scrape (default 45)
 //   MIN_LAP       seconds; a gate crossing sooner than this after the last one is ignored (default 12)
 import PAGE from "./page.html";
+import SEMIS from "./semis.json";
 
 export default {
   async fetch(request, env, ctx) {
@@ -24,6 +25,11 @@ export default {
     }
     return new Response("Not found", { status: 404 });
   },
+  // every minute: final heats overwrite each other on LiveFPV, so results must be saved even when nobody has the board open
+  async scheduled(event, env, ctx) {
+    const base = (env.LIVEFPV_BASE || "https://fdf2784.livefpv.com").replace(/\/$/, "");
+    await scrape(base, minLap(env), [], env.FINALS);
+  },
 };
 
 async function getData(env, ctx, url) {
@@ -36,7 +42,15 @@ async function getData(env, ctx, url) {
   if (hit) return withHeaders(hit, "HIT");
 
   try {
-    const state = await scrape(base, minLap(env));
+    // LiveFPV drops main heats from its results list when it rebuilds Main Events into finals,
+    // so every main race id ever seen is remembered for a day
+    const seenKey = new Request(`${url.origin}/__cache/main-races?base=${encodeURIComponent(base)}`);
+    const seenHit = await cache.match(seenKey);
+    const seen = seenHit ? await seenHit.json() : [];
+    const state = await scrape(base, minLap(env), seen, env.FINALS);
+    ctx.waitUntil(cache.put(seenKey, new Response(JSON.stringify(state.mainRaceIds), {
+      headers: { "content-type": "application/json", "cache-control": "public, max-age=86400" },
+    })));
     const body = JSON.stringify(state);
     const res = new Response(body, {
       headers: {
@@ -160,7 +174,7 @@ function parseRound(page) {
   return classes;
 }
 
-async function scrape(base, min) {
+async function scrape(base, min, seenMainRaces = [], store = null) {
   const res = await get(base + "/results/");
   const title = res.match(/<title>([\s\S]*?)<\/title>/);
   const event = title ? (text(title[1]).split("::")[1] || "").trim() : "";
@@ -181,7 +195,7 @@ async function scrape(base, min) {
   const order = { practice: 0, qualifier: 1 };
   rounds.sort((a, b) => ((order[a.kind] ?? 2) - (order[b.kind] ?? 2)) || a.n - b.n);
   await fixShortLaps(base, rounds, min);
-  const mains = await scrapeMains(base, res, min);
+  const { mains, raceIds: mainRaceIds } = await scrapeMains(base, res, min, seenMainRaces, store, event);
 
   const race = res.match(/view_race_result&(?:amp;)?id=\d+"[^>]*>([\s\S]*?)<\/a><\/td>\s*<td[^>]*>([\s\S]*?)<\/td>/);
   return {
@@ -189,6 +203,7 @@ async function scrape(base, min) {
     source: base + "/results/",
     rounds,
     mains,
+    mainRaceIds,
     lastRace: race ? text(race[1]) : "",
     lastRaceAt: race ? text(race[2]) : "",
     minLap: min,
@@ -289,18 +304,20 @@ function recomputeRow(row, raw, min) {
 
 /* ---------------- mains ---------------- */
 
-// "Pro Class Racing A1-Main" -> { klass: "Pro Class Racing", main: "A", n: 1 }
+// "Pro Class Racing A1-Main" -> heat 1 of A; "Pro Class Racing A-Main" (no number) -> the A final
 function mainHeat(label) {
-  const m = label.match(/^(.*?)\s*([A-Z])(\d+)-Main\b/);
-  return m ? { klass: m[1].trim(), main: m[2], n: Number(m[3]), name: m[2] + m[3] } : null;
+  const m = label.match(/^(.*?)\s*([A-Z])(\d*)-Main\b/);
+  if (!m) return null;
+  const final = m[3] === "";
+  return { klass: m[1].trim(), main: m[2], n: final ? 0 : Number(m[3]), final, name: final ? m[2] + " Final" : m[2] + m[3] };
 }
 
 // Heats and pilots come from the "Main Events" heat sheet, so the mains show before they are run.
 // Results come from the races listed under a "Main" heading on the results page.
-async function scrapeMains(base, res, min) {
+async function scrapeMains(base, res, min, seen, store, event) {
   const sheetLink = [...res.matchAll(/href="(\/results\/\?p=view_heat_sheet&(?:amp;)?id=\d+)"[^>]*>([\s\S]*?)<\/a>/g)]
     .find((m) => /Main/.test(text(m[2])));
-  if (!sheetLink) return [];
+  if (!sheetLink) return { mains: [], raceIds: seen };
   const sheetUrl = base + sheetLink[1].replace(/&amp;/g, "&");
   const sheet = await get(sheetUrl);
 
@@ -315,30 +332,72 @@ async function scrapeMains(base, res, min) {
 
   // walk the race table in order, remembering which round heading each race sits under
   const raceIds = [];
+  const completedAt = new Map();
   let heading = "";
-  for (const m of res.matchAll(/<th>([^<]*)<\/th>\s*<th>Time Completed<\/th>|view_race_result&(?:amp;)?id=(\d+)"/g)) {
+  for (const m of res.matchAll(/<th>([^<]*)<\/th>\s*<th>Time Completed<\/th>|view_race_result&(?:amp;)?id=(\d+)"[\s\S]*?<\/td>\s*<td>([^<]*)<\/td>/g)) {
     if (m[1] != null) heading = text(m[1]);
-    else if (/Main/.test(heading)) raceIds.push(m[2]);
+    else if (/Main/.test(heading)) { raceIds.push(m[2]); completedAt.set(m[2], text(m[3])); }
   }
-  await Promise.all(raceIds.map(async (id) => {
+  const known = [...new Set([...seen, ...raceIds, ...SEMIS.heats.map((h) => h.raceId)])].map(Number).sort((a, b) => a - b);
+  // main races get consecutive ids, so gaps between known ones are probably dropped heats; small gaps only
+  const ids = known.length && known[known.length - 1] - known[0] <= 30
+    ? Array.from({ length: known[known.length - 1] - known[0] + 1 }, (_, i) => known[0] + i)
+    : known;
+  const pages = (await Promise.all(ids.map(async (id) => {
+    const page = await get(`${base}/results/?p=view_race_result&id=${id}`).catch(() => null);
+    return page && [String(id), page];
+  }))).filter(Boolean);
+  // snapshot heats: their race ids are semis even though LiveFPV now labels those pages X-Main
+  const semiById = new Map();
+  for (const sh of SEMIS.heats) {
+    const h = mainHeat(`${SEMIS.klass} ${sh.name}-Main`);
+    const url = sh.gone ? sheetUrl : `${base}/results/?p=view_race_result&id=${sh.raceId}`;
+    const heat = { ...h, status: "Complete", pilots: [], raceId: sh.gone ? null : sh.raceId, url,
+      rows: sh.rows.map((r) => ({ fastest: "", avg: "", top2: "", top3: "", ...r, raceId: sh.gone ? null : sh.raceId, heat: h.name })) };
+    heats.set(h.name, heat);
+    semiById.set(sh.raceId, heat);
+  }
+  const found = [];
+  const finalRaces = [];
+  // ascending ids: when two races map to one heat (a renamed heat vs the real final), the newest wins
+  for (const [id, page] of pages) {
     const url = `${base}/results/?p=view_race_result&id=${id}`;
-    const page = await get(url);
+    // LiveFPV reuses race ids: a final can overwrite a semi's race. Same pilots -> still the semi;
+    // different pilots -> it is the new race, and the semi keeps its snapshot
+    const semi = semiById.get(id);
+    if (semi) {
+      const rows = parseRaceRows(page, id, semi.name, min);
+      const key = (list) => list.map((r) => r.driver).sort().join("|");
+      if (rows.length && key(rows) === key(semi.rows)) { semi.rows = rows; continue; }
+      semi.raceId = null;
+      semi.url = sheetUrl;
+      semi.rows = semi.rows.map((r) => ({ ...r, raceId: null }));
+    }
     const hdr = page.match(/class="class_header">([\s\S]*?)<\/span>/);
     const h = hdr && mainHeat(text(hdr[1]));
-    if (!h) return;
+    if (!h) continue;
+    found.push(id);
+    if (h.final) {
+      const len = page.match(/Length:\s*(\d+)\s*Laps/);
+      finalRaces.push({ main: h.main, klass: h.klass, raceId: id, at: completedAt.get(id) || "", length: len ? Number(len[1]) : null,
+        rows: parseRaceRows(page, id, h.name, min) });
+      continue;
+    }
     const heat = heats.get(h.name) || { ...h, status: "", pilots: [], url, rows: [] };
     heat.raceId = id;
     heat.url = url;
     heat.rows = parseRaceRows(page, id, heat.name, min);
     heats.set(h.name, heat);
-  }));
+  }
+
+  if (store) await mergeFinals(store, `finals:${base}:${event}`, finalRaces, heats, sheetUrl, base);
 
   const mains = new Map();
-  for (const h of [...heats.values()].sort((a, b) => a.main.localeCompare(b.main) || a.n - b.n)) {
+  for (const h of [...heats.values()].sort((a, b) => a.main.localeCompare(b.main) || a.final - b.final || a.n - b.n)) {
     if (!mains.has(h.main)) mains.set(h.main, { name: h.main, heats: [] });
     mains.get(h.main).heats.push(h);
   }
-  return [...mains.values()];
+  return { mains: [...mains.values()], raceIds: found };
 }
 
 // result rows of one race, in the same shape parseRound produces
@@ -361,4 +420,42 @@ function parseRaceRows(page, raceId, heatName, min) {
     rows.push(row);
   }
   return rows;
+}
+
+/* ---------------- final heats ---------------- */
+
+// A final is several heats, but LiveFPV runs them all through one race id and overwrites it,
+// so every distinct result is saved to KV as it appears. Heats are told apart by the completion
+// time on the results list; when a race is not listed, by its result (pilots and times).
+async function mergeFinals(store, key, races, heats, sheetUrl, base) {
+  const saved = JSON.parse((await store.get(key)) || "{}");
+  let changed = false;
+  for (const race of races) {
+    if (!race.rows.length) continue;
+    const sig = JSON.stringify(race.rows.map((r) => [r.driver, r.lapsTime, r.fastest, r.top3]));
+    const list = (saved[race.main] ||= []);
+    if (list.some((e) => e.sig === sig)) continue;
+    const last = list[list.length - 1];
+    const entry = { sig, raceId: race.raceId, at: race.at, length: race.length, klass: race.klass, rows: race.rows };
+    // same race and same completion time: a re-score of that heat, not a new one
+    if (last && race.at && last.raceId === race.raceId && last.at === race.at) list[list.length - 1] = entry;
+    else list.push(entry);
+    changed = true;
+  }
+  if (changed) await store.put(key, JSON.stringify(saved));
+
+  const live = new Set(races.map((r) => JSON.stringify(r.rows.map((x) => [x.driver, x.lapsTime, x.fastest, x.top3]))));
+  for (const [main, list] of Object.entries(saved)) {
+    const placeholder = heats.get(main + " Final");
+    heats.delete(main + " Final");
+    list.forEach((e, i) => {
+      const current = live.has(e.sig); // laps are only fetchable while the race page still shows this heat
+      const url = current ? `${base}/results/?p=view_race_result&id=${e.raceId}` : sheetUrl;
+      heats.set(`${main} Final ${i + 1}`, {
+        klass: e.klass, main, n: i + 1, final: true, name: `${main} Final ${i + 1}`, status: "Complete",
+        pilots: placeholder ? placeholder.pilots : [], length: e.length, raceId: current ? e.raceId : null, url,
+        rows: e.rows.map((r) => ({ ...r, raceId: current ? r.raceId : null, heat: `${main} Final ${i + 1}` })),
+      });
+    });
+  }
 }

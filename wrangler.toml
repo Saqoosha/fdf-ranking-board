@@ -1,14 +1,14 @@
+# Static archive of finished events: public/<year>/<round>/ holds each event's page and frozen data.
+# `/` redirects to the latest event (public/_redirects).
+# To run the live board for a new event: wrangler deploy -c wrangler.live.toml
 name = "fdf-ranking-board"
-main = "src/index.js"
 compatibility_date = "2026-09-01"
 
-# page.html is imported as a string
-[[rules]]
-type = "Text"
-globs = ["**/*.html"]
-fallthrough = true
+[assets]
+directory = "public"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"
 
-[vars]
-LIVEFPV_BASE = "https://fdf2784.livefpv.com"
-CACHE_TTL = "45"
-MIN_LAP = "12"
+# no scheduled scraping for the archive; an explicit empty list removes the live cron
+[triggers]
+crons = []
