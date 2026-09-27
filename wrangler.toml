@@ -11,3 +11,4 @@ fallthrough = true
 [vars]
 LIVEFPV_BASE = "https://fdf2784.livefpv.com"
 CACHE_TTL = "45"
+MIN_LAP = "12"

@@ -5,6 +5,7 @@
 // Config (wrangler.toml [vars]):
 //   LIVEFPV_BASE  e.g. "https://fdf2784.livefpv.com"
 //   CACHE_TTL     seconds to reuse a scrape (default 45)
+//   MIN_LAP       seconds; a gate crossing sooner than this after the last one is ignored (default 12)
 import PAGE from "./page.html";
 
 export default {
@@ -35,7 +36,7 @@ async function getData(env, ctx, url) {
   if (hit) return withHeaders(hit, "HIT");
 
   try {
-    const state = await scrape(base);
+    const state = await scrape(base, minLap(env));
     const body = JSON.stringify(state);
     const res = new Response(body, {
       headers: {
@@ -68,12 +69,14 @@ async function getLaps(env, ctx, url) {
     });
   }
   const cache = caches.default;
-  const key = new Request(`${url.origin}/__cache/laps.json?base=${encodeURIComponent(base)}&race=${race}`);
+  const key = new Request(`${url.origin}/__cache/laps.json?base=${encodeURIComponent(base)}&race=${race}&min=${minLap(env)}`);
   const hit = await cache.match(key);
   if (hit) return withHeaders(hit, "HIT");
   try {
     const src = `${base}/results/?p=view_race_result&id=${race}`;
     const data = parseRace(await get(src), race, src);
+    const min = minLap(env);
+    for (const name in data.drivers) data.drivers[name] = cleanLaps(data.drivers[name], min).laps.map(fmtT);
     const res = new Response(JSON.stringify(data), {
       headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=300" },
     });
@@ -157,7 +160,7 @@ function parseRound(page) {
   return classes;
 }
 
-async function scrape(base) {
+async function scrape(base, min) {
   const res = await get(base + "/results/");
   const title = res.match(/<title>([\s\S]*?)<\/title>/);
   const event = title ? (text(title[1]).split("::")[1] || "").trim() : "";
@@ -177,6 +180,7 @@ async function scrape(base) {
   }));
   const order = { practice: 0, qualifier: 1 };
   rounds.sort((a, b) => ((order[a.kind] ?? 2) - (order[b.kind] ?? 2)) || a.n - b.n);
+  await fixShortLaps(base, rounds, min);
 
   const race = res.match(/view_race_result&(?:amp;)?id=\d+"[^>]*>([\s\S]*?)<\/a><\/td>\s*<td[^>]*>([\s\S]*?)<\/td>/);
   return {
@@ -185,6 +189,7 @@ async function scrape(base) {
     rounds,
     lastRace: race ? text(race[1]) : "",
     lastRaceAt: race ? text(race[2]) : "",
+    minLap: min,
     fetchedAt: new Date().toISOString(),
   };
 }
@@ -209,4 +214,70 @@ function parseRace(page, id, url) {
   const hdr = page.match(/class="class_header">([\s\S]*?)<\/span>/);
   const rnd = page.match(/class="class_sub_header">Round:\s*([\s\S]*?)<\/span>/);
   return { id, url, title: hdr ? text(hdr[1]).replace(/\s+/g, " ") : "", round: rnd ? text(rnd[1]) : "", drivers };
+}
+
+/* ---------------- minimum lap ---------------- */
+
+const minLap = (env) => Number(env.MIN_LAP || 12);
+
+function secs(s) {
+  if (!s || !/\d/.test(s)) return null;
+  let v = 0;
+  for (const x of String(s).trim().split(":")) v = v * 60 + parseFloat(x);
+  return isFinite(v) ? v : null;
+}
+function fmtT(v) {
+  if (v >= 60) { const m = Math.floor(v / 60); return m + ":" + (v - m * 60).toFixed(3).padStart(6, "0"); }
+  return v.toFixed(3);
+}
+
+// A crossing less than `min` seconds after the last accepted one is a false detection:
+// ignore it, so its time carries into the next lap. A short lap at the very end is dropped.
+function cleanLaps(times, min) {
+  const laps = [];
+  let carry = 0;
+  for (const t of times) {
+    const v = secs(t);
+    if (v == null) continue;
+    if (carry + v < min) { carry += v; continue; }
+    laps.push(carry + v);
+    carry = 0;
+  }
+  return { laps, dropped: carry };
+}
+
+function bestWindow(laps, n) {
+  let best = null;
+  for (let i = 0; i + n <= laps.length; i++) {
+    const sum = laps.slice(i, i + n).reduce((a, b) => a + b, 0);
+    if (best == null || sum < best) best = sum;
+  }
+  return best == null ? "" : fmtT(best);
+}
+
+// LiveFPV's ranking values count false detections as laps. Only rows whose fastest lap is
+// under `min` can contain one, so only their heats are fetched and recomputed.
+async function fixShortLaps(base, rounds, min) {
+  const rows = [];
+  for (const r of rounds) for (const list of Object.values(r.classes)) {
+    for (const row of list) {
+      const f = secs(row.fastest);
+      if (f != null && f < min && row.raceId) rows.push(row);
+    }
+  }
+  const ids = [...new Set(rows.map((row) => row.raceId))];
+  const races = Object.fromEntries(await Promise.all(ids.map(async (id) =>
+    [id, parseRace(await get(`${base}/results/?p=view_race_result&id=${id}`), id, "").drivers])));
+  for (const row of rows) {
+    const raw = races[row.raceId][row.driver];
+    if (!raw) continue;
+    const { laps, dropped } = cleanLaps(raw, min);
+    const total = secs(String(row.lapsTime).split("/")[1]);
+    if (total != null) row.lapsTime = `${laps.length}/${fmtT(total - dropped)}`;
+    row.fastest = laps.length ? fmtT(Math.min(...laps)) : "";
+    row.avg = laps.length ? fmtT(laps.reduce((a, b) => a + b, 0) / laps.length) : "";
+    row.top2 = bestWindow(laps, 2);
+    row.top3 = bestWindow(laps, 3);
+    row.minLapFixed = true;
+  }
 }
