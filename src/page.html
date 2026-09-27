@@ -414,8 +414,13 @@ footer b{color:var(--ink);font-weight:600}
       .then(d => { laps[id] = {status: "ok", data: d}; }, () => { laps[id] = {status: "err"}; })
       .then(render);
   }
-  // failed heats are retried when the row is reopened or new data arrives
-  function dropFailedLaps(){ for(const id in laps) if(laps[id].status === "err") delete laps[id]; }
+  // failed or empty heats are retried when the row is reopened or new data arrives
+  function dropFailedLaps(){
+    for(const id in laps){
+      const L = laps[id];
+      if(L.status === "err" || (L.status === "ok" && !Object.keys(L.data.drivers || {}).length)) delete laps[id];
+    }
+  }
   function lapChips(ts){
     const v = ts.map(secs);
     let fi = -1, w = -1, ws = Infinity;
