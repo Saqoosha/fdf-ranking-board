@@ -18,6 +18,9 @@ export default {
     if (url.pathname === "/data.json") {
       return getData(env, ctx, url);
     }
+    if (url.pathname === "/laps.json") {
+      return getLaps(env, ctx, url);
+    }
     return new Response("Not found", { status: 404 });
   },
 };
@@ -50,6 +53,34 @@ async function getData(env, ctx, url) {
   } catch (e) {
     const backup = await cache.match(new Request(key.url + "&backup=1"));
     if (backup) return withHeaders(backup, "STALE");
+    return new Response(JSON.stringify({ error: String(e && e.message || e) }), {
+      status: 502, headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  }
+}
+
+async function getLaps(env, ctx, url) {
+  const base = (env.LIVEFPV_BASE || "https://fdf2784.livefpv.com").replace(/\/$/, "");
+  const race = url.searchParams.get("race") || "";
+  if (!/^\d{1,12}$/.test(race)) {
+    return new Response(JSON.stringify({ error: "race must be numeric" }), {
+      status: 400, headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  }
+  const cache = caches.default;
+  const key = new Request(`${url.origin}/__cache/laps.json?base=${encodeURIComponent(base)}&race=${race}`);
+  const hit = await cache.match(key);
+  if (hit) return withHeaders(hit, "HIT");
+  try {
+    const src = `${base}/results/?p=view_race_result&id=${race}`;
+    const data = parseRace(await get(src), race, src);
+    const res = new Response(JSON.stringify(data), {
+      headers: { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=300" },
+    });
+    // an empty parse may be a layout change or a placeholder page; don't pin it for 5 minutes
+    if (Object.keys(data.drivers).length) ctx.waitUntil(cache.put(key, res.clone()));
+    return withHeaders(res, "MISS");
+  } catch (e) {
     return new Response(JSON.stringify({ error: String(e && e.message || e) }), {
       status: 502, headers: { "content-type": "application/json; charset=utf-8" },
     });
@@ -156,4 +187,26 @@ async function scrape(base) {
     lastRaceAt: race ? text(race[2]) : "",
     fetchedAt: new Date().toISOString(),
   };
+}
+
+// race result pages embed per-driver laps as `racerLaps[id] = { 'driverName' : '...', 'laps' : [ {'lapNum':'0','time':'0',...}, ... ] };`
+// lap 0 is the holeshot (start to first gate) and is dropped.
+function parseRace(page, id, url) {
+  const jsStr = (s) => s.replace(/\\(.)/g, "$1");
+  const drivers = Object.create(null);
+  for (const m of page.matchAll(/racerLaps\[\d+\]\s*=\s*\{([\s\S]*?)\n\s*\};/g)) {
+    const name = m[1].match(/'driverName'\s*:\s*'((?:[^'\\]|\\.)*)'/);
+    if (!name) continue;
+    const laps = [];
+    // one chunk per lap object; searching each chunk once keeps this linear on odd input
+    for (const chunk of m[1].split(/'lapNum'\s*:\s*/).slice(1)) {
+      const n = chunk.match(/^'(\d+)'/);
+      const t = chunk.match(/'time'\s*:\s*'([^']*)'/);
+      if (n && t && n[1] !== "0") laps.push(t[1]);
+    }
+    drivers[unescape(jsStr(name[1])).trim()] = laps;
+  }
+  const hdr = page.match(/class="class_header">([\s\S]*?)<\/span>/);
+  const rnd = page.match(/class="class_sub_header">Round:\s*([\s\S]*?)<\/span>/);
+  return { id, url, title: hdr ? text(hdr[1]).replace(/\s+/g, " ") : "", round: rnd ? text(rnd[1]) : "", drivers };
 }
